@@ -13,3 +13,5 @@ https://www.geeksforgeeks.org/computer-vision/convnext/
 https://github.com/facebookresearch/ConvNeXt/tree/main
 
 https://docs.pytorch.org/vision/main/models/convnext.html
+
+https://huggingface.co/docs/transformers/en/model_doc/convnextv2
