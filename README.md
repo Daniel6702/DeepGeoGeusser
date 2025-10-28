@@ -4,3 +4,12 @@ Some countries are excluded due to lack of available photos, North Korea and man
 Use of S2 Geometry "http://s2geometry.io/devguide/cpp/quickstart", to index world as cells, with different levels associated. <br>
 Use of heatmap, to visualize the propability of what region the picture is from. <br>
 Could run the image through a text recognizion filter to narrow down what cell it is from.
+
+
+## ConvNeXt
+
+https://www.geeksforgeeks.org/computer-vision/convnext/
+
+https://github.com/facebookresearch/ConvNeXt/tree/main
+
+https://docs.pytorch.org/vision/main/models/convnext.html
