@@ -1,8 +1,6 @@
 numpy
-ipython
 geopandas
 shapely
 folium
-requests
 s2sphere
-pyarrow
+webdataset
