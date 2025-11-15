@@ -1,14 +1,17 @@
 import torch
 from tqdm import tqdm
 import torch.nn.functional as F
+import os
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 
 class Trainer:
     def __init__(self, model, loader, device="cuda"):
-        model = model.to(device, memory_format=torch.channels_last)
-        self.model = torch.nn.DataParallel(model)
+        self.model = torch.nn.DataParallel(
+            model,
+            device_ids=list(range(torch.cuda.device_count()))
+        ).to(device, memory_format=torch.channels_last)
         
         self.loader = loader
         self.device = device
@@ -30,6 +33,26 @@ class Trainer:
             self.scaler.scale(loss).backward()
             self.scaler.step(optimizer)
             self.scaler.update()
+
+    def save_checkpoint(self, optimizer, epoch, path="checkpoints/checkpoint.pt"):
+        ckpt = {
+            "model": self.model.module.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "scaler": self.scaler.state_dict(),
+            "epoch": epoch
+        }
+        torch.save(ckpt, path)
+
+    def load_checkpoint(self, optimizer, path="checkpoints/checkpoint.pt"):
+        if not os.path.exists(path):
+            return 0  # no checkpoint → start at epoch 0
+
+        ckpt = torch.load(path, map_location=self.device, weights_only=False)
+        self.model.module.load_state_dict(ckpt["model"])
+        optimizer.load_state_dict(ckpt["optimizer"])
+        self.scaler.load_state_dict(ckpt["scaler"])
+        print(f"Loaded checkpoint from epoch {ckpt['epoch']}")
+        return ckpt["epoch"] + 1 
 
 
 def hierarchical_loss(logits_per_level, labels_per_level, weights):
