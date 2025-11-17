@@ -3,6 +3,7 @@ import webdataset as wds
 import torch
 import csv
 from pathlib import Path
+from s2sphere import CellId 
 
 class GeoWebDataset:
     def __init__(self, dataset_path, processor, levels, shuffle=False, num_shards_limit=None, os_type="LINUX"):
@@ -39,12 +40,19 @@ class GeoWebDataset:
 
     def _process_sample(self, sample):
         img, meta = sample
-        pixel_values = self.processor(img, return_tensors="pt", do_resize=False)["pixel_values"].squeeze(0)
-        class_vec = torch.tensor([int(meta["s2"][lvl]) for lvl in self.level_keys], dtype=torch.long)
+        
+        pixel_values = self.processor( 
+            img,
+            return_tensors="pt",
+            do_resize=True,
+            size=224             #Resizes input training images to just 224x224, should be much faster (but worse of course)
+        )["pixel_values"].squeeze(0)
+        
+        class_vec = torch.tensor(
+            [int(meta["s2"][lvl]) - 1 for lvl in self.level_keys], #Dataset class indicies start from 1 not 0
+            dtype=torch.long
+        )
         return pixel_values, class_vec
-
-
-
 
 def get_num_classes_from_csv(s2_labels_dir: str | Path, levels):
     s2_labels_dir = Path(s2_labels_dir)
@@ -70,3 +78,58 @@ def get_num_classes_from_csv(s2_labels_dir: str | Path, levels):
         num_classes[level_key] = len(s2_ids)
 
     return num_classes
+
+def build_parent_tables(s2_labels_dir: str | Path, levels: list[int]):
+    s2_labels_dir = Path(s2_labels_dir)
+    levels = sorted(levels)
+
+    # --- 1. Read CSVs and deduplicate S2 IDs ---
+    ids = {}
+    idx_map = {}
+
+    for lvl in levels:
+        L = f"L{lvl}"
+        csv_path = s2_labels_dir / f"{L}.csv"
+
+        unique_ids = []
+        seen = set()
+        
+        with csv_path.open() as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                s2id = int(row["s2_id"])
+                if s2id not in seen:
+                    seen.add(s2id)
+                    unique_ids.append(s2id)
+        
+        ids[L] = unique_ids
+        idx_map[L] = {s2id: i for i, s2id in enumerate(unique_ids)}
+
+    # --- 2. Build parent lookup tensors ---
+    parents = {}
+
+    for fine in levels:
+        for coarse in levels:
+            if coarse >= fine:
+                continue
+
+            fine_ids = ids[f"L{fine}"]
+            parent_L = f"L{coarse}"
+
+            parent_tensor = torch.empty(len(fine_ids), dtype=torch.long)
+
+            for i, fine_s2id in enumerate(fine_ids):
+                parent_s2id = CellId(fine_s2id).parent(coarse).id()
+                try:
+                    parent_tensor[i] = idx_map[parent_L][parent_s2id]
+                except KeyError:
+                    raise KeyError(
+                        f"Parent S2 ID {parent_s2id} (from child {fine_s2id}) "
+                        f"is not present in {parent_L}.csv"
+                    )
+
+            parents[(fine, coarse)] = parent_tensor
+
+    return parents
+
+
