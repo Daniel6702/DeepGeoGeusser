@@ -30,7 +30,7 @@ class HierarchicalLoss:
             probs_coarse = torch.zeros(B, num_coarse, device=device)
             probs_coarse.scatter_add_(1, parent.unsqueeze(0).expand(B, -1), probs_fine)
 
-            log_probs_coarse = torch.log(probs_coarse + 1e-12)
+            log_probs_coarse = torch.log(probs_coarse.clamp(min=1e-12))
             y_coarse = labels_per_level[idx]
 
             # safety check: labels must be valid indices
@@ -40,6 +40,7 @@ class HierarchicalLoss:
             total_loss += self.level_weights[idx] * F.nll_loss(log_probs_coarse, y_coarse)
 
         return total_loss
+        
     def to(self, device):
         self.parents = {k: v.to(device) for k, v in self.parents.items()}
         return self

@@ -40,13 +40,7 @@ class GeoWebDataset:
 
     def _process_sample(self, sample):
         img, meta = sample
-        
-        pixel_values = self.processor( 
-            img,
-            return_tensors="pt",
-            do_resize=True,
-            size=224             #Resizes input training images to just 224x224, should be much faster (but worse of course)
-        )["pixel_values"].squeeze(0)
+        pixel_values = self.processor(img, return_tensors="pt")["pixel_values"].squeeze(0)
         
         class_vec = torch.tensor(
             [int(meta["s2"][lvl]) - 1 for lvl in self.level_keys], #Dataset class indicies start from 1 not 0

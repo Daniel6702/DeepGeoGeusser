@@ -8,17 +8,19 @@ torch.backends.cudnn.allow_tf32 = True
 torch.set_float32_matmul_precision("medium") #might be faster?
 
 class Trainer:
-    def __init__(self, model, loader, loss_fn, device="cuda"):
+    def __init__(self, model, loader, loss_fn, device="cuda", multi_gpu = False):
+        self.device = device
 
-        #Multi GPU
-        #self.model = torch.nn.DataParallel(
-        #   model,
-        #    device_ids=list(range(torch.cuda.device_count()))
-        #).to(device, memory_format=torch.channels_last)
-
-        #Single GPU
-        gpu_id = 0
-        self.model = model.to(f"cuda:{gpu_id}", memory_format=torch.channels_last)
+        model = model.to(device, memory_format=torch.channels_last)
+        if multi_gpu and torch.cuda.device_count() > 1:
+            print(f"Using {torch.cuda.device_count()} GPUs")
+            self.model = torch.nn.DataParallel(
+                model,
+                device_ids=list(range(torch.cuda.device_count()))
+            )
+        else:
+            print("Using single GPU")
+            self.model = model
 
         self.loader = loader
         self.loss_fn = loss_fn
