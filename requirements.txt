@@ -4,3 +4,4 @@ shapely
 folium
 s2sphere
 webdataset
+torch==2.5.1
