@@ -4,7 +4,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=20
 #SBATCH --gres=gpu:2
-#SBATCH --time=96:00:00
+#SBATCH --time=120:00:00
 #SBATCH --output=DeepGeoGeusser/logs/%x-%j.out
 #SBATCH --error=DeepGeoGeusser/logs/%x-%j.err
 
@@ -28,14 +28,14 @@ nvidia-smi || echo "nvidia-smi not available"
 #Run training
 python train.py \
   --data-path ../GeoDataset/dataset_sharded \
-  --batch-size 48 \
+  --batch-size 64 \
   --workers "${SLURM_CPUS_PER_TASK}" \
-  --epochs 24 \
+  --epochs 48 \
   --learning-rate 8e-5 \
-  --checkpoint-path checkpoints/checkpoint_384.pt \
+  --checkpoint-path checkpoints/checkpoint_1235.pt \
   --multi_gpu True \
   --pretrained-model-id facebook/convnext-base-384 \
-  --logfile logs/training_log_384.csv \
+  --logfile logs/training_log_1234_2.csv \
   --freeze False \
   --resize 384 \
   --s2-range 3 7 \

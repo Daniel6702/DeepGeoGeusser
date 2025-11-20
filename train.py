@@ -7,7 +7,6 @@ import csv
 import argparse
 import os
 
-
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-path", type=str, default="/home/austen/GeoDataset/dataset_sharded", help="Path to the sharded GeoDataset")
@@ -22,7 +21,7 @@ def parse_args():
     parser.add_argument("--multi_gpu", type=bool, default=True, help="123")
     parser.add_argument("--freeze", type=bool, default=False, help="123")
     parser.add_argument("--resize", type=int, default=0, help="123")
-    parser.add_argument("--weights",type=float,nargs="+", help="Space-separated list of weights")
+    parser.add_argument("--weights", type=float, nargs="+", help="Space-separated list of weights")
     parser.add_argument("--s2-range", type=int, nargs=2, help="Start and stop S2 levels (e.g., 3 7)")
     return parser.parse_args()
 
@@ -32,7 +31,7 @@ def main():
     DATASET_PATH = args.data_path
     BATCH_SIZE = args.batch_size
     WORKERS = args.workers
-    S2_LEVELS = range(args.s2_range[0], args.s2_range[1])
+    S2_LEVELS = list(range(args.s2_range[0], args.s2_range[1]))  # make it an explicit list
     S2_LEVEL_WEIGHTS = args.weights
     LEARNING_RATE = args.learning_rate
     PRETRAINED_MODEL_ID = args.pretrained_model_id
@@ -44,16 +43,26 @@ def main():
     FREEZE = args.freeze
     RESIZE = args.resize
 
-    print(f"BATCH_SIZE: {BATCH_SIZE}, WORKERS: {WORKERS}, PRETRAINED_MODEL_ID: {PRETRAINED_MODEL_ID}, FREEZE: {False} \n CHECKPOINT_PATH: {CHECKPOINT_PATH}, LOGFILE: {LOGFILE}, MULTI_GPU: {MULTI_GPU}, RESIZE: {RESIZE}")
+    print(
+        f"BATCH_SIZE: {BATCH_SIZE}, WORKERS: {WORKERS}, PRETRAINED_MODEL_ID: {PRETRAINED_MODEL_ID}, "
+        f"FREEZE: {FREEZE} \nCHECKPOINT_PATH: {CHECKPOINT_PATH}, LOGFILE: {LOGFILE}, "
+        f"MULTI_GPU: {MULTI_GPU}, RESIZE: {RESIZE}"
+    )
 
     # Make sure checkpoint directory exists
     ckpt_dir = Path(CHECKPOINT_PATH).parent
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
+    # ----- S2 canonical index maps -----
+    s2_labels_dir = Path(DATASET_PATH) / "s2_labels"
+    # idx2id[level][class_idx] = s2_id
+    # id2idx[level][s2_id] = class_idx
+    idx2id, id2idx, _ = build_s2_index_maps(s2_labels_dir, S2_LEVELS)
+
     # Setup
     processor = AutoImageProcessor.from_pretrained(
         PRETRAINED_MODEL_ID,
-        use_fast=True
+        use_fast=True,
     )
     if RESIZE > 0:
         processor.do_resize = True
@@ -67,18 +76,22 @@ def main():
         levels=S2_LEVELS,
         shuffle=False,
         num_shards_limit=None,
+        id2idx=id2idx,  # ensure labels use the same mapping as parent tables
     )
 
     model = HierarchicalConvNeXt(
         pretrained_name=PRETRAINED_MODEL_ID,
         num_classes=dataset.num_classes_list[-1],
-        freeze=False,
+        freeze=FREEZE,
     )
 
-    parent_table = build_parent_tables(
-        Path(DATASET_PATH) / "s2_labels",
-        S2_LEVELS
+    # Parent tables built from the same canonical index maps
+    parent_table = build_parent_tables_from_maps(
+        idx2id,
+        id2idx,
+        S2_LEVELS,
     )
+
     hier_loss = HierarchicalLoss(
         levels=S2_LEVELS,
         parents=parent_table,
@@ -121,18 +134,6 @@ def main():
             writer.writerow([epoch, avg_loss])
 
         trainer.save_checkpoint(optimizer, epoch, CHECKPOINT_PATH)
-
-    # Evaluation
-    evaluator = Evaluator(
-        trainer.model,
-        loader,
-        levels=S2_LEVELS,
-        parents=parent_table,
-        device=DEVICE,
-    )
-    metrics = evaluator.evaluate(max_batches=100)
-    print(metrics)
-
 
 if __name__ == "__main__":
     main()
