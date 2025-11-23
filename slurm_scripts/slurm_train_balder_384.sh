@@ -28,14 +28,14 @@ nvidia-smi || echo "nvidia-smi not available"
 #Run training
 python train.py \
   --data-path ../GeoDataset/dataset_sharded \
-  --batch-size 64 \
+  --batch-size 32 \
   --workers "${SLURM_CPUS_PER_TASK}" \
-  --epochs 48 \
-  --learning-rate 8e-5 \
+  --epochs 64 \
+  --learning-rate 2e-5 \
   --checkpoint-path checkpoints/checkpoint_1235.pt \
   --multi_gpu True \
   --pretrained-model-id facebook/convnext-base-384 \
-  --logfile logs/training_log_1234_2.csv \
+  --logfile logs/training_log_1234_3.csv \
   --freeze False \
   --resize 384 \
   --s2-range 3 7 \

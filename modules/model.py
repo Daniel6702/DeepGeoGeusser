@@ -24,3 +24,21 @@ class HierarchicalConvNeXt(nn.Module):
         pooled = outputs.pooler_output
         logits_fine = self.head_fine(pooled)  # (B, num_L6)
         return logits_fine
+
+
+class HierarchicalConvNeXt_V2(nn.Module):
+    def __init__(self, num_classes_per_level, pretrained_name="facebook/convnext-large-384"):
+        super().__init__()
+
+        self.backbone = ConvNextModel.from_pretrained(pretrained_name, ignore_mismatched_sizes=True, use_safetensors=True)
+        hidden_dim = self.backbone.config.hidden_sizes[-1]
+
+        self.heads = nn.ModuleList(
+            [nn.Linear(hidden_dim, n) for n in num_classes_per_level]
+        )
+
+    def forward(self, pixel_values):
+        outputs = self.backbone(pixel_values)
+        pooled = outputs.pooler_output
+        logits_per_level = [head(pooled) for head in self.heads]
+        return logits_per_level

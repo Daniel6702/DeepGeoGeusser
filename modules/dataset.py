@@ -30,6 +30,7 @@ class GeoWebDataset:
 
         self.dataset = (
             wds.WebDataset(self.urls, shardshuffle=100 if shuffle else False)
+            .shuffle(1000) 
             .decode("pil")
             .to_tuple("jpg", "json")
             .map(self._process_sample)

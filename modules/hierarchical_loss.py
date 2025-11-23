@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 
 class HierarchicalLoss:
-    def __init__(self, levels, parents, weights, num_classes_per_level):
+    def __init__(self, levels, parents, weights, num_classes_per_level, label_smoothing=0.1):
         self.levels = list(levels)
         self.parents = parents
         self.level_weights = weights
@@ -15,27 +15,18 @@ class HierarchicalLoss:
 
         probs_fine = F.softmax(logits_fine, dim=1)
 
-        # fine level (last)
         y_fine = labels_per_level[-1]
-        total_loss = self.level_weights[-1] * F.cross_entropy(logits_fine, y_fine)
+        total_loss = self.level_weights[-1] * F.cross_entropy(logits_fine, y_fine, label_smoothing=0.1)
 
-        # coarse levels
         for idx, coarse_level in enumerate(self.levels[:-1]):
             parent = self.parents[(self.fine_level, coarse_level)]
             num_coarse = self.num_classes_per_level[idx]
-
-            # safety check: parents must be valid indices
-            #assert parent.max().item() < num_coarse
 
             probs_coarse = torch.zeros(B, num_coarse, device=device)
             probs_coarse.scatter_add_(1, parent.unsqueeze(0).expand(B, -1), probs_fine)
 
             log_probs_coarse = torch.log(probs_coarse.clamp(min=1e-12))
             y_coarse = labels_per_level[idx]
-
-            # safety check: labels must be valid indices
-            #assert 0 <= y_coarse.min().item() < num_coarse
-            #assert y_coarse.max().item() < num_coarse
 
             total_loss += self.level_weights[idx] * F.nll_loss(log_probs_coarse, y_coarse)
 
@@ -44,6 +35,17 @@ class HierarchicalLoss:
     def to(self, device):
         self.parents = {k: v.to(device) for k, v in self.parents.items()}
         return self
+
+class HierarchicalLoss_V2:
+    def __init__(self, weights, label_smoothing=0.1):
+        self.level_weights = weights
+        self.label_smoothing = label_smoothing
+
+    def __call__(self, logits_per_level, labels_per_level):
+        total = 0.0
+        for w, logits, y in zip(self.level_weights, logits_per_level, labels_per_level):
+            total += w * F.cross_entropy(logits, y, label_smoothing=self.label_smoothing)
+        return total
 
 '''
 parents is a dictionary of lookup tables.

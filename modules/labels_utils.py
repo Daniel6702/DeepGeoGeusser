@@ -20,7 +20,7 @@ def build_s2_index_maps(s2_labels_dir: str | Path, levels: list[int]):
         csv_path = s2_labels_dir / f"{L}.csv"
         if not csv_path.exists():
             raise FileNotFoundError(f"Missing CSV for {L}: {csv_path}")
-
+        
         s2_ids = set()
         with csv_path.open("r", newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)

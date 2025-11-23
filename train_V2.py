@@ -22,7 +22,8 @@ def parse_args():
     parser.add_argument("--multi_gpu", type=bool, default=True, help="123")
     parser.add_argument("--freeze", type=bool, default=False, help="123")
     parser.add_argument("--resize", type=int, default=0, help="123")
-    parser.add_argument("--weights", type=float, nargs="+", help="Space-separated list of weights")
+    parser.add_argument("--init_weights", type=float, nargs="+", help="Space-separated list of weights")
+    parser.add_argument("--target_weights", type=float, nargs="+", help="Space-separated list of weights")
     parser.add_argument("--s2-range", type=int, nargs=2, help="Start and stop S2 levels (e.g., 3 7)")
     return parser.parse_args()
 
@@ -33,7 +34,8 @@ def main():
     BATCH_SIZE = args.batch_size
     WORKERS = args.workers
     S2_LEVELS = list(range(args.s2_range[0], args.s2_range[1]))  # make it an explicit list
-    S2_LEVEL_WEIGHTS = args.weights
+    INIT_WEIGHTS = args.init_weights
+    TARGET_WEIGHTS = args.target_weights
     LEARNING_RATE = args.learning_rate
     PRETRAINED_MODEL_ID = args.pretrained_model_id
     EPOCHS = args.epochs
@@ -41,26 +43,22 @@ def main():
     DEVICE = args.device
     LOGFILE = args.logfile
     MULTI_GPU = args.multi_gpu
+    FREEZE = args.freeze
     RESIZE = 384
 
     print(
         f"BATCH_SIZE: {BATCH_SIZE}, WORKERS: {WORKERS}, PRETRAINED_MODEL_ID: {PRETRAINED_MODEL_ID}, "
-        f"\nCHECKPOINT_PATH: {CHECKPOINT_PATH}, LOGFILE: {LOGFILE}, "
+        f"FREEZE: {FREEZE} \nCHECKPOINT_PATH: {CHECKPOINT_PATH}, LOGFILE: {LOGFILE}, "
         f"MULTI_GPU: {MULTI_GPU}, RESIZE: {RESIZE}"
     )
 
-    # Make sure checkpoint directory exists
     ckpt_dir = Path(CHECKPOINT_PATH).parent
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
-    # ----- S2 canonical index maps -----
     s2_labels_dir = Path(DATASET_PATH) / "s2_labels"
     idx2id, id2idx, _ = build_s2_index_maps(s2_labels_dir, S2_LEVELS)
 
-    processor = AutoImageProcessor.from_pretrained(
-        PRETRAINED_MODEL_ID,
-        use_fast=True,
-    )
+    processor = AutoImageProcessor.from_pretrained(PRETRAINED_MODEL_ID,use_fast=True,)
     processor.do_resize = True
     processor.size = {"shortest_edge": RESIZE}
 
@@ -68,28 +66,20 @@ def main():
         DATASET_PATH,
         processor,
         levels=S2_LEVELS,
-        shuffle=True,
+        shuffle=False,
         num_shards_limit=None,
         id2idx=id2idx,
     )
 
-    model = HierarchicalConvNeXt(
+    model = HierarchicalConvNeXt_V2(
         pretrained_name=PRETRAINED_MODEL_ID,
-        num_classes=dataset.num_classes_list[-1],
-        freeze=False,
+        num_classes_per_level=dataset.num_classes_list
     )
 
-    parent_table = build_parent_tables_from_maps(
-        idx2id,
-        id2idx,
-        S2_LEVELS,
+    hier_loss = HierarchicalLoss_V2(
+        weights=INIT_WEIGHTS,
+        label_smoothing=0.1
     )
-    hier_loss = HierarchicalLoss(
-        levels=S2_LEVELS,
-        parents=parent_table,
-        weights=S2_LEVEL_WEIGHTS,
-        num_classes_per_level=dataset.num_classes_list,
-    ).to(DEVICE)
 
     loader = wds.WebLoader(
         dataset.dataset,
@@ -108,7 +98,7 @@ def main():
         fused=True,
         weight_decay=0.05
     )
-    scheduler = CosineAnnealingLR(optimizer, T_max=EPOCHS-1)
+    scheduler = CosineAnnealingLR(optimizer, T_max=EPOCHS)
 
     if not Path(LOGFILE).exists():
         with open(LOGFILE, "w", newline="") as f:
@@ -120,7 +110,13 @@ def main():
     for epoch in range(start_epoch, EPOCHS):
         print(f"\nEpoch {epoch}")
 
-        avg_loss = trainer.train_epoch(optimizer, weights=S2_LEVEL_WEIGHTS)
+        alpha = epoch / (EPOCHS - 1)
+        hier_loss.level_weights = [
+            (1 - alpha) * w_coarse + alpha * w_fine_target
+            for w_coarse, w_fine_target in zip(INIT_WEIGHTS, TARGET_WEIGHTS)
+        ]
+
+        avg_loss = trainer.train_epoch(optimizer, weights=[])
         scheduler.step()
         print(f"Average loss: {avg_loss:.4f}")
 
@@ -136,18 +132,36 @@ if __name__ == "__main__":
 '''
 python train.py \
   --data-path ../GeoDataset/dataset_sharded \
-  --batch-size 12 \
-  --workers 8 \
-  --epochs 12 \
+  --batch-size 24 \
+  --workers "${SLURM_CPUS_PER_TASK}" \
+  --epochs 32 \
   --learning-rate 5e-5 \
-  --checkpoint-path checkpoints/checkpoint_384_V3.pt \
+  --checkpoint-path checkpoints/checkpoint_384_V2.pt \
   --multi_gpu False \
-  --pretrained-model-id facebook/convnext-base-384 \
-  --logfile logs/training_log_large3.csv \
+  --pretrained-model-id facebook/convnext-large-384 \
+  --logfile logs/training_384_V2.csv \
   --freeze False \
   --resize 384 \
   --s2-range 3 7 \
-  --weights 0.4 0.6 0.8 1.0
+  --init_weights 1.0 0.8 0.6 0.4 \
+  --target_weights 0.2 0.4 0.7 1.0
+
+
+python train_V2.py \
+  --data-path ../GeoDataset/dataset_sharded \
+  --batch-size 4 \
+  --workers 4 \
+  --epochs 32 \
+  --learning-rate 5e-5 \
+  --checkpoint-path checkpoints/checkpoint_384_V2.pt \
+  --multi_gpu False \
+  --pretrained-model-id facebook/convnext-large-384 \
+  --logfile logs/training_384_V2.csv \
+  --freeze False \
+  --resize 384 \
+  --s2-range 3 7 \
+  --init_weights 1.0 0.8 0.6 0.4 \
+  --target_weights 0.2 0.4 0.7 1.0
 
 #SBATCH --gres=gpu:2
 #Start: sbatch slurm_train.sh
