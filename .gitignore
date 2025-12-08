@@ -7,6 +7,7 @@ checkpoints/
 logs/
 slurm_scripts/
 test_images/
+temp/
 
 # C extensions
 *.so
