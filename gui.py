@@ -1,5 +1,3 @@
-import io
-import base64
 from pathlib import Path
 
 import torch
@@ -10,23 +8,18 @@ import branca.colormap as cm
 import s2sphere
 from transformers import AutoImageProcessor
 
-# ---- modules ----
-from modules import (
-    GeoWebDataset,
-    build_s2_index_maps,
-    build_parent_tables_from_maps,
-    HierarchicalConvNeXt,
-)
+from modules import HierarchicalConvNeXt
 
 # ---------------- CONFIG ----------------
-DATASET_PATH = Path("/home/austen/GeoDataset/dataset_sharded")
 CHECKPOINT_DIR = Path("checkpoints")
-DEFAULT_CHECKPOINT = CHECKPOINT_DIR / "checkpoint_1235.pt"
+DEFAULT_CHECKPOINT = CHECKPOINT_DIR / "checkpoint.pt"
 PRETRAINED_MODEL_ID = "facebook/convnext-base-384"
-S2_LEVELS = list(range(3, 8))
+
 LEVEL_TO_SHOW = 6
 RESIZE = 384
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+S2_METADATA_PATH = Path("checkpoints/s2_metadata.pt")
 
 # --------------- HELPER FNS ---------------
 def probs_by_level(probs_fine, levels, parents, num_classes_per_level):
@@ -41,9 +34,6 @@ def probs_by_level(probs_fine, levels, parents, num_classes_per_level):
         out[coarse] = pc[0]
     return out
 
-def s2_id_to_latlon(s2_id):
-    ll = s2sphere.CellId(int(s2_id)).to_lat_lng()
-    return float(ll.lat().degrees), float(ll.lng().degrees)
 
 def s2_cell_corners(s2_id):
     cell = s2sphere.Cell(s2sphere.CellId(int(s2_id)))
@@ -85,31 +75,23 @@ def make_prob_map(level, probs_per_level, idx2id):
     return m
 
 
-# --------------- INITIALIZE MODEL SUPPORT STUFF ---------------
-print("Initializing processor / dataset / S2 index...")
+# --------------- LOAD PRECOMPUTED S2 METADATA ---------------
+print("Loading S2 metadata and initializing image processor...")
 
-s2_labels_dir = DATASET_PATH / "s2_labels"
-idx2id, id2idx, _ = build_s2_index_maps(s2_labels_dir, S2_LEVELS)
-
-processor = AutoImageProcessor.from_pretrained(PRETRAINED_MODEL_ID, use_fast=True)
-if RESIZE > 0:
-    processor.do_resize = True
-    processor.size = {"shortest_edge": RESIZE}
-else:
-    processor.do_resize = False
-
-dataset = GeoWebDataset(
-    DATASET_PATH,
-    processor,
-    levels=S2_LEVELS,
-    shuffle=False,
-    num_shards_limit=None,
-    id2idx=id2idx,
-)
-
-parent_table = build_parent_tables_from_maps(idx2id, id2idx, S2_LEVELS)
+meta = torch.load(S2_METADATA_PATH, map_location="cpu")
+S2_LEVELS = meta["S2_LEVELS"]
+idx2id = meta["idx2id"]
+NUM_CLASSES_PER_LEVEL = meta["num_classes_per_level"]
+parent_table = meta["parent_table"]
 PARENTS = {k: v.to(DEVICE) for k, v in parent_table.items()}
-NUM_CLASSES_PER_LEVEL = dataset.num_classes_list
+
+# (Optional sanity check)
+assert LEVEL_TO_SHOW in S2_LEVELS, "LEVEL_TO_SHOW must be one of S2_LEVELS"
+
+# Image processor
+processor = AutoImageProcessor.from_pretrained(PRETRAINED_MODEL_ID, use_fast=True)
+processor.do_resize = True
+processor.size = {"shortest_edge": RESIZE}
 
 # --------------- MODEL LOADING WITH SIMPLE CACHE ---------------
 _current_model = None
@@ -129,7 +111,7 @@ def load_model(checkpoint_path: Path):
     print(f"Loading model from {checkpoint_path} ...")
     model = HierarchicalConvNeXt(
         pretrained_name=PRETRAINED_MODEL_ID,
-        num_classes=NUM_CLASSES_PER_LEVEL[-1],
+        num_classes=NUM_CLASSES_PER_LEVEL[-1],  # fine level (S7)
         freeze=False,
     ).to(DEVICE)
 
@@ -142,11 +124,11 @@ def load_model(checkpoint_path: Path):
     return model
 
 
-# --------------- INFERENCE ON A PIL IMAGE ---------------
-def run_inference_on_pil(pil_img: Image.Image, checkpoint_path: Path):
+def run_inference_on_pil(
+    pil_img: Image.Image, checkpoint_path: Path, level_to_show: int = LEVEL_TO_SHOW
+):
     model = load_model(checkpoint_path)
 
-    # Preprocess with same processor as dataset
     inputs = processor(pil_img, return_tensors="pt")
     pixel_vals = inputs["pixel_values"].to(DEVICE, memory_format=torch.channels_last)
 
@@ -162,7 +144,7 @@ def run_inference_on_pil(pil_img: Image.Image, checkpoint_path: Path):
     )
 
     m = make_prob_map(
-        level=LEVEL_TO_SHOW,
+        level=level_to_show,
         probs_per_level=probs_per_level,
         idx2id=idx2id,
     )
@@ -209,13 +191,19 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <div id="left">
-        <h2>GeoModel GUI</h2>
-        <p>1. Choose checkpoint<br>2. Click paste area<br>3. Ctrl+V an image</p>
-
+        <h2>DeepGeoGeusser GUI</h2>
+        
         <label for="checkpoint-select">Checkpoint:</label>
         <select id="checkpoint-select">
             {% for ckpt in checkpoints %}
             <option value="{{ ckpt }}" {% if ckpt == default_ckpt %}selected{% endif %}>{{ ckpt }}</option>
+            {% endfor %}
+        </select>
+
+        <label for="level-select">S2 level:</label>
+        <select id="level-select">
+            {% for lvl in s2_levels %}
+            <option value="{{ lvl }}" {% if lvl == default_level %}selected{% endif %}>Level {{ lvl }}</option>
             {% endfor %}
         </select>
 
@@ -237,6 +225,7 @@ HTML_TEMPLATE = """
     const pasteArea = document.getElementById("paste-area");
     const previewImg = document.getElementById("preview-img");
     const checkpointSelect = document.getElementById("checkpoint-select");
+    const levelSelect = document.getElementById("level-select");
     const mapFrame = document.getElementById("map-frame");
 
     pasteArea.addEventListener("focus", () => {
@@ -274,6 +263,7 @@ HTML_TEMPLATE = """
         const formData = new FormData();
         formData.append("image", imageFile, "pasted.png");
         formData.append("checkpoint", checkpointSelect.value);
+        formData.append("level", levelSelect.value);
 
         try {
             const resp = await fetch("/predict", {
@@ -314,7 +304,8 @@ def index():
         HTML_TEMPLATE,
         checkpoints=checkpoints,
         default_ckpt=str(DEFAULT_CHECKPOINT.resolve()),
-        map_html=None,
+        s2_levels=S2_LEVELS,
+        default_level=LEVEL_TO_SHOW,
     )
 
 
@@ -330,7 +321,15 @@ def predict():
         ckpt_path_str = request.form.get("checkpoint", str(DEFAULT_CHECKPOINT))
         ckpt_path = Path(ckpt_path_str)
 
-        m = run_inference_on_pil(pil_img, ckpt_path)
+        level_str = request.form.get("level", str(LEVEL_TO_SHOW))
+        try:
+            level = int(level_str)
+        except ValueError:
+            level = LEVEL_TO_SHOW
+        if level not in S2_LEVELS:
+            level = LEVEL_TO_SHOW
+
+        m = run_inference_on_pil(pil_img, ckpt_path, level_to_show=level)
         map_html = m.get_root().render()
         return jsonify({"map_html": map_html})
     except Exception as e:

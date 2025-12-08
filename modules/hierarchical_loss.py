@@ -63,37 +63,7 @@ class HierarchicalLoss:
         """
         self.parents = {k: v.to(device) for k, v in self.parents.items()}
         return self
-
-class HierarchicalLoss_V2:
-    """
-    Hierarchical loss for models that output separate logits per level.
-
-    Each level has its own classifier head; we compute a weighted sum of
-    cross-entropy losses (with label smoothing) across levels.
-    """
-    def __init__(self, weights, label_smoothing=0.1):
-        """
-        Args:
-            weights: per-level weights for combining losses.
-            label_smoothing: label smoothing for all levels.
-        """
-        self.level_weights = weights
-        self.label_smoothing = label_smoothing
-
-    def __call__(self, logits_per_level, labels_per_level):
-        """
-        Args:
-            logits_per_level: list of logits [logits_L0, logits_L1, ...].
-            labels_per_level: list of labels [y_L0, y_L1, ...].
-
-        Returns:
-            Scalar total loss (weighted sum of CE losses).
-        """
-        total = 0.0
-        for w, logits, y in zip(self.level_weights, logits_per_level, labels_per_level):
-            total += w * F.cross_entropy(logits, y, label_smoothing=self.label_smoothing)
-        return total
-
+        
 '''
 parents is a dictionary of lookup tables.
 For a given cell (class index) in a smaller layer, we can look which cell in the larger layer this smaller cell is inside.
