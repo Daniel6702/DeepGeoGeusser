@@ -4,11 +4,18 @@ from s2sphere import CellId, LatLng
 
 def build_s2_index_maps(s2_labels_dir: str | Path, levels: list[int]):
     """
-    For each level L, build:
-      - idx2id[L]: list so that idx2id[L][class_idx] = s2_id
-      - id2idx[L]: dict so that id2idx[L][s2_id] = class_idx
+    Build mappings between S2 cell IDs and contiguous class indices for each level.
 
-    We use sorted(unique_s2_ids) to have a deterministic order.
+    Expects CSV files named L{level}.csv with a 's2_id' column.
+
+    Args:
+        s2_labels_dir: directory containing S2 label CSVs.
+        levels: list of S2 levels to load.
+
+    Returns:
+        idx2id: {level: [s2_id_0, s2_id_1, ...]} index -> S2 ID.
+        id2idx: {level: {s2_id: index}} S2 ID -> index.
+        num_classes: {level: num_classes_at_that_level}.
     """
     s2_labels_dir = Path(s2_labels_dir)
     idx2id = {}
@@ -39,7 +46,16 @@ def build_s2_index_maps(s2_labels_dir: str | Path, levels: list[int]):
 
     return idx2id, id2idx, num_classes
 
-
 def latlon_to_s2id(lat: float, lon: float, level: int) -> int:
+    """
+    Convert (lat, lon) in degrees to an S2 cell ID at the given level.
+    """
     ll = LatLng.from_degrees(lat, lon)
     return CellId.from_lat_lng(ll).parent(level).id()
+
+def s2_id_to_latlon(s2_id):
+    """
+    Convert an S2 cell ID to (lat, lon) in degrees, using the cell center.
+    """
+    ll = s2sphere.CellId(int(s2_id)).to_lat_lng()
+    return float(ll.lat().degrees), float(ll.lng().degrees)

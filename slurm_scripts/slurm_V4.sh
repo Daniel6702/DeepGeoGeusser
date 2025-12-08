@@ -2,7 +2,7 @@
 #SBATCH --job-name=geo-train
 #SBATCH --partition=GPU24
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=24
 #SBATCH --gres=gpu:1
 #SBATCH --nodelist=node5 
 #SBATCH --time=240:00:00
@@ -29,17 +29,17 @@ nvidia-smi || echo "nvidia-smi not available"
 #Run training
 python train.py \
   --data-path ../GeoDataset/dataset_sharded \
-  --batch-size 32 \
+  --batch-size 48 \
   --workers "${SLURM_CPUS_PER_TASK}" \
   --epochs 64 \
   --learning-rate 5e-5 \
-  --checkpoint-path checkpoints/checkpoint_V3.pt \
+  --checkpoint-path checkpoints/checkpoint_V4.pt \
   --multi_gpu False \
   --pretrained-model-id facebook/convnext-base-384 \
-  --logfile logs/training_log_V3_3.csv \
+  --logfile logs/training_log_V4_3.csv \
   --freeze False \
   --resize 384 \
-  --s2-range 3 7 \
-  --weights 1.0 1.0 1.0 1.0
+  --s2-range 3 8 \
+  --weights 0.4 0.6 0.8 1.0 1.2
 
 echo "Job ${SLURM_JOB_ID} finished."

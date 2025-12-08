@@ -2,7 +2,22 @@ import torch
 import torch.nn.functional as F
 
 class HierarchicalLoss:
+    """
+    Hierarchical loss when the model outputs logits only at the finest S2 level.
+
+    - Fine-level loss: cross-entropy with label smoothing.
+    - Coarse-level loss: aggregate fine-level probabilities via S2 parent maps,
+      then compute NLL loss.
+    """
     def __init__(self, levels, parents, weights, num_classes_per_level, label_smoothing=0.1):
+        """
+        Args:
+            levels: list of S2 levels (coarse → fine).
+            parents: dict[(fine_level, coarse_level)] -> parent index tensor.
+            weights: per-level weights (same order as levels).
+            num_classes_per_level: list of num classes per level.
+            label_smoothing: label smoothing value for fine-level CE loss.
+        """
         self.levels = list(levels)
         self.parents = parents
         self.level_weights = weights
@@ -10,6 +25,16 @@ class HierarchicalLoss:
         self.fine_level = self.levels[-1]
 
     def __call__(self, logits_fine, labels_per_level):
+        """
+        Compute the hierarchical loss.
+
+        Args:
+            logits_fine: [B, num_fine] logits at the finest S2 level.
+            labels_per_level: list of label tensors [y_Lcoarse0, ..., y_Lfine].
+
+        Returns:
+            Scalar total loss combining fine and coarse level losses.
+        """
         B, num_fine = logits_fine.shape
         device = logits_fine.device
 
@@ -33,15 +58,37 @@ class HierarchicalLoss:
         return total_loss
         
     def to(self, device):
+        """
+        Move parent lookup tensors to the given device.
+        """
         self.parents = {k: v.to(device) for k, v in self.parents.items()}
         return self
 
 class HierarchicalLoss_V2:
+    """
+    Hierarchical loss for models that output separate logits per level.
+
+    Each level has its own classifier head; we compute a weighted sum of
+    cross-entropy losses (with label smoothing) across levels.
+    """
     def __init__(self, weights, label_smoothing=0.1):
+        """
+        Args:
+            weights: per-level weights for combining losses.
+            label_smoothing: label smoothing for all levels.
+        """
         self.level_weights = weights
         self.label_smoothing = label_smoothing
 
     def __call__(self, logits_per_level, labels_per_level):
+        """
+        Args:
+            logits_per_level: list of logits [logits_L0, logits_L1, ...].
+            labels_per_level: list of labels [y_L0, y_L1, ...].
+
+        Returns:
+            Scalar total loss (weighted sum of CE losses).
+        """
         total = 0.0
         for w, logits, y in zip(self.level_weights, logits_per_level, labels_per_level):
             total += w * F.cross_entropy(logits, y, label_smoothing=self.label_smoothing)
