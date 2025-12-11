@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 
 logs/
+checkpoints/
 slurm_scripts/
 test_images/
 temp/
