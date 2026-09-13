@@ -1,0 +1,8 @@
+numpy
+Pillow
+tqdm
+matplotlib
+webdataset
+torch
+transformers
+-e ./adaptive-geogrid

@@ -6,6 +6,11 @@ __pycache__/
 # C extensions
 *.so
 .omo
+.vscode
+*.aggrid
+
+dataset/
+grids/
 
 # Distribution / packaging
 .Python
