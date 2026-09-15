@@ -15,11 +15,11 @@ from modules.trainer import Trainer
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", default="dataset/")
-    parser.add_argument("--grid", default="grids/world.aggrid")
-    parser.add_argument("--model", default="google/siglip-base-patch16-224")
-    parser.add_argument("--batch-size", type=int, default=2)
-    parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument("--dataset", default="datasets/aarhus")
+    parser.add_argument("--grid", default="grids/aarhus.aggrid")
+    parser.add_argument("--model", default="google/siglip-base-patch16-384")
+    parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--learning-rate", type=float, default=1e-5)
     parser.add_argument("--device", default="cuda")

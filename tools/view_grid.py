@@ -3,9 +3,9 @@ import matplotlib.pyplot as plt
 from modules.dataset import PanoramaDataset
 import numpy as np
 
-grid = load_grid("grids/world.aggrid")
+grid = load_grid("aarhus.aggrid")
 
-metadata = PanoramaDataset.load_metadata("dataset")
+metadata = PanoramaDataset.load_metadata("datasets/aarhus")
 
 points = []
 seen = set()

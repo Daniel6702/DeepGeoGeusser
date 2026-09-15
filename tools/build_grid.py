@@ -10,12 +10,12 @@ from modules.dataset import PanoramaDataset
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", required=True, help="Dataset root containing metadata.csv", default="dataset/")
-    parser.add_argument("--boundary", required=True, help="GeoJSON boundary used for the grid")
-    parser.add_argument("--output", default="grid.aggrid", help="Output .aggrid file")
-    parser.add_argument("--target-points", type=int, default=10, help="Approximate panoramas per fine cell")
-    parser.add_argument("--levels", type=int, default=3, help="Number of coarser hierarchy levels")
-    parser.add_argument("--branching-factor", type=int, default=4, help="Children per parent level")
+    parser.add_argument("--dataset", help="Dataset root containing metadata.csv", default="datasets/aarhus")
+    parser.add_argument("--boundary", help="GeoJSON boundary used for the grid", default="modules/adaptive-geogrid/examples/aarhus_kommune.geojson")
+    parser.add_argument("--output", default="aarhus.aggrid", help="Output .aggrid file")
+    parser.add_argument("--target-points", type=int, default=50, help="Approximate panoramas per fine cell")
+    parser.add_argument("--levels", type=int, default=4, help="Number of coarser hierarchy levels")
+    parser.add_argument("--branching-factor", type=int, default=3, help="Children per parent level")
     parser.add_argument("--mode", default="geodesic", choices=["power", "warped", "geodesic", "graph"])
     parser.add_argument("--projected-crs", default=None, help="Projected CRS, e.g. EPSG:8857 for worldwide grids")
     return parser.parse_args()
@@ -44,7 +44,7 @@ def main():
 
     points = np.asarray(points, dtype=float)
     print(f"Building grid from {len(points):,} unique panorama locations")
-
+    #geodesic_grid_size
     grid = tessellate(
         points=points,
         boundary=args.boundary,
